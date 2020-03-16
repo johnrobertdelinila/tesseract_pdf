@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title></title>
+	
+	<script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.13.5/xlsx.full.min.js"></script>
+	<script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.13.5/jszip.js"></script>
+	<script type="text/javascript" src="https://rawgithub.com/mozilla/pdf.js/gh-pages/build/pdf.js"></script>
+	<script src="https://mozilla.github.io/pdf.js/build/pdf.js"></script>
+
+	<script src="/dist/bundle-home.js"></script>
+
+	<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
+
+	<link rel="stylesheet" href="/dist/bundle.css">
+	<script src="/dist/tesseract.dev.js"></script>
+	<script src="/dist/style-bundle.js"></script>
+
+</head>
+<body>
+
+	<div id="container">
+        <div class="image-upload-wrap">
+            <input class="file-upload-input" id="fileUpload" type='file' onchange="readURL(this);"/>
+            <div class="drag-text">
+                <h3>Drag and drop a file or select Spreadsheet</h3>
+            </div>
+        </div>
+        <div class="file-upload-content">
+            <div class="image-title-wrap">
+                <button type="button" onclick="removeUpload()" class="remove-image">Remove <span class="image-title">Uploaded Image</span></button>
+            </div>
+        </div>
+        <br><br>
+        <button class="learn-more" id="upload">
+            <span class="circle" aria-hidden="true">
+                <span class="icon arrow"></span>
+            </span>
+            <span class="button-text">GENERATE NOW</span>
+        </button>
+
+        <center>
+        	<h1>Progress: <span id="progress">0</span>%</h1>
+        	<h3 id="page"></h3>
+        </center>
+	</div>
+	<hr />
+	<div id="dvExcel"></div>
+
+
+
+</body>
+</html>
+<!-- The core Firebase JS SDK is always required and must be listed first -->
+<script src="https://www.gstatic.com/firebasejs/7.11.0/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/7.11.0/firebase-firestore.js"></script>
+<!-- TODO: Add SDKs for Firebase products that you want to use
+     https://firebase.google.com/docs/web/setup#available-libraries -->
+
+<script>
+  // Your web app's Firebase configuration
+  var firebaseConfig = {
+    apiKey: "AIzaSyD9UDTavTtklrwJ8ijzzGPmoama7LIDGjw",
+    authDomain: "hackathon-9e577.firebaseapp.com",
+    databaseURL: "https://hackathon-9e577.firebaseio.com",
+    projectId: "hackathon-9e577",
+    storageBucket: "hackathon-9e577.appspot.com",
+    messagingSenderId: "242966446366",
+    appId: "1:242966446366:web:6fef6581dfd7aafaf9490f"
+  };
+  // Initialize Firebase
+  firebase.initializeApp(firebaseConfig);
+
+</script>
+<script type="text/javascript">
+
+	const { createWorker, createScheduler, setLogging } = Tesseract;
+
+	function readURL(input) {
+	  if (input.files && input.files[0]) {
+
+	    var reader = new FileReader();
+
+	    reader.onload = function(e) {
+	      $('.image-upload-wrap').hide();
+
+	      $('.file-upload-image').attr('src', e.target.result);
+	      $('.file-upload-content').show();
+
+	      $('.image-title').html(input.files[0].name);
+	    };
+
+	    reader.readAsDataURL(input.files[0]);
+
+	    $('#progress_container').hide();
+
+	  } else {
+	    removeUpload();
+	  }
+	}
+
+	function removeUpload() {
+	    $('.file-upload-input').replaceWith($('.file-upload-input').clone());
+	    $('.file-upload-content').hide();
+	    $('.image-upload-wrap').show();
+	    $("#fileUpload").val(null);
+	    $('#upload').show();
+	}
+
+	$(document).ready(() => {
+
+		const isIncludeLandmark = false;
+		window.PDFJS = window.pdfjsLib;
+		PDFJS.GlobalWorkerOptions.workerSrc = 'https://mozilla.github.io/pdf.js/build/pdf.worker.js'
+		PDFJS.disableWorker = true;
+
+		const splitter = ", ";
+		const total_progress = {};
+		var excelRows = null;
+
+		var global_index = 0;
+		var global_url;
+		var pdfLength = 0;
+		const options = {
+			corePath: '/node_modules/tesseract.js-core/tesseract-core.wasm.js',
+			logger: m => m.status === 'recognizing text' ? showProgress(m.progress, global_index, pdfLength) : ""
+		}
+
+		var scheduler;
+		var worker;
+
+		const db = firebase.firestore();
+		const pdf = db.collection('pdf');
+
+		async function initTesseract() {
+			setLogging(true);
+			scheduler = createScheduler();
+			worker = createWorker(options);
+			await worker.load();
+			await worker.loadLanguage('eng');
+			await worker.initialize('eng');
+			scheduler.addWorker(worker);
+		}
+		initTesseract();
+
+		$('.image-upload-wrap').bind('dragover', function () {
+		        $('.image-upload-wrap').addClass('image-dropping');
+		    });
+		    $('.image-upload-wrap').bind('dragleave', function () {
+		        $('.image-upload-wrap').removeClass('image-dropping');
+		});
+
+		$("body").on("click", "#upload", function () {
+		    //Reference the FileUpload element.
+		    var fileUpload = $("#fileUpload")[0];
+		
+		    //Validate whether File is valid Excel file.
+		    var regex = /^([a-zA-Z0-9\s_\\.\-:])+(.xls|.xlsx)$/;
+		    if (regex.test(fileUpload.value.toLowerCase())) {
+		        if (typeof (FileReader) != "undefined") {
+		            var reader = new FileReader();
+		
+		            //For Browsers other than IE.
+		            if (reader.readAsBinaryString) {
+		                reader.onload = function (e) {
+		                    ProcessExcel(e.target.result);
+		                };
+		                reader.readAsBinaryString(fileUpload.files[0]);
+		            } else {
+		                //For IE Browser.
+		                reader.onload = function (e) {
+		                    var data = "";
+		                    var bytes = new Uint8Array(e.target.result);
+		                    for (var i = 0; i < bytes.byteLength; i++) {
+		                        data += String.fromCharCode(bytes[i]);
+		                    }
+
+		                    ProcessExcel(data);
+		                };
+		                reader.readAsArrayBuffer(fileUpload.files[0]);
+		            }
+		        } else {
+		            alert("This browser does not support HTML5.");
+		        }
+		    } else {
+		        alert("Please upload a valid Excel file.");
+		    }
+		});
+
+		function isFloat(n){
+		    return Number(n) === n && n % 1 !== 0;
+		}
+
+		function formatAddress(address) {
+		    if (address !== undefined && address !== null && address.trim().length > 0) {
+
+		        const capitalize = (s) => {
+		            if (typeof s !== 'string') return ''
+		            return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+		        }
+
+		        const arrAdd = address.split(splitter);
+		        const province = arrAdd[0].trim() || null;
+		        const district = arrAdd[1].trim() || null;
+		        const municipality = arrAdd[2].trim() || null;
+		        const brg = arrAdd[3] !== undefined ? arrAdd[3].trim() : null;
+
+		        var output = capitalize(municipality) + splitter + capitalize(province); 
+		        if (brg !== null) {
+		            var finalBrg = brg.split(". ")[1];
+		            if (finalBrg === undefined) {
+		                finalBrg = brg.split(": ")[1];
+		                if (!isIncludeLandmark) {
+		                    return capitalize(municipality) + splitter + capitalize(province);
+		                }
+		            }
+		            output = capitalize(finalBrg) + splitter + capitalize(municipality) + splitter + capitalize(province);
+		        }
+		        return output;
+		    }else {
+		        return null;
+		    }
+		}
+
+		async function checkExistence(pdfText, sentence) {
+			var pdfText = await pdfText.toLowerCase();
+			const words = await sentence.toLowerCase().split(/, | |"/);
+			if (words.length > 0 && pdfText.length > 0) {
+				var count = 0;
+				for (let i = 0; i < words.length; i++) {
+					const word = await (words[i] === 'brgy' ? 'barangay' : words[i].trim());
+					const isExist = await pdfText.includes(word);
+					if (isExist) {
+						count++;
+					}
+				}
+				if (count === words.length || ((sentence.toLowerCase().includes("corp.") || sentence.toLowerCase().includes("piggery"))	 && count === words.length - 1)) {
+					return true;
+				}else {
+					return false;
+				}
+			}else {
+				return false;
+			}
+		}
+
+		function check_lat_lon(lat, lon){
+			const ck_lat = /^(-?[1-8]?\d(?:\.\d{1,18})?|90(?:\.0{1,18})?)$/;
+			const ck_lon = /^(-?(?:1[0-7]|[1-9])?\d(?:\.\d{1,18})?|180(?:\.0{1,18})?)$/;
+
+			var validLat = ck_lat.test(lat);
+			var validLon = ck_lon.test(lon);
+			if(validLat && validLon) {
+				return true;
+			} else {
+				return false;
+			}
+		}
+
+		function transformCoor(coor, type) {
+			var start = [];
+			if (type === 'lat') {
+				for (let i = 5; i <= 21; i++) {
+					start.push(i.toString());
+				}
+			}else {
+				for (let i = 114; i <= 127; i++) {
+					start.push(i.toString());
+				}
+			}
+			
+			for (let i = 0; i < start.length; i++) {
+				if (coor.toString().startsWith(start[i])) {
+					return parseFloat(start[i] + "." + coor.toString().substring(start[i].length));
+					break;
+				}
+			}
+
+			return coor;
+		}
+
+		function ConvertDMSToDD(days, minutes, seconds) {
+		    var dd = days + (minutes/60) + seconds/(60*60);
+		    dd = parseFloat(dd);
+		    return dd;
+		}
+
+		function transformDMS(coor, type, word) {
+			var start = [];
+			if (type === 'lat') {
+				for (let i = 5; i <= 21; i++) {
+					start.push(i.toString());
+				}
+			}else {
+				for (let i = 114; i <= 127; i++) {
+					start.push(i.toString());
+				}
+			}
+			
+			for (let i = 0; i < start.length; i++) {
+				if (coor.toString().startsWith(start[i])) {
+					const split = word.split(/%|'|"|°/);
+					if (split.length > 2) {
+						return ConvertDMSToDD(parseInt(split[0]), parseInt(split[1]), parseInt(split[2]));
+						break;
+					}
+					
+				}
+			}
+
+			return coor;
+		}
+
+		async function extractCoordinates(pdfText) {
+			const words = await pdfText.split(/ |\n|_/);
+			if (words.length > 0) {
+				var output = null;
+				for (let i = 0; i < words.length; i++) {
+					const word = await words[i].trim();
+					var lat = await parseFloat(word);
+					var lng = parseFloat(words[i + 1]);
+
+					for (var j = 1; j <= 5; j++) {
+						if (!isNaN(parseFloat(words[i + j])) && (words[i + j] !== undefined ? words[i + j] : "").toString().trim().length >= 6) {
+							lng = parseFloat(words[i + j]);
+							break;
+						}
+					}
+
+					lat = transformDMS(lat, 'lat', word);
+					lng = transformDMS(lng, 'lng', words[i + 1]);
+
+					if (!isFloat(lat) && lat !== undefined && lat.toString().length >= 6) {
+						lat = transformCoor(lat, "lat");
+					}
+					if (!isFloat(lng) && lng !== undefined && lng.toString().length >= 6) {
+						lng = transformCoor(lng, "lng");
+					}
+
+					if (!isNaN(lat) && !isNaN(lng) && isFloat(lat) && isFloat(lng) && check_lat_lon(lat, lng)) {
+						output = {
+							latitude: lat,
+							longitude: lng
+						}
+						break;
+					}
+				}
+				return output;
+			}else {
+				return null;
+			}
+		}
+
+		async function getLatLng(pdfText, pdf_index) {
+			if (excelRows.length > 0) {
+				for (let i = 0; i < excelRows.length; i++) {
+					const result = await excelRows[i];
+					const firmname = await result['FIRMNAME'];
+					const lng = await result['LONGITUDE'];
+					const lat = await result['LATITUDE'];
+					var address = await result['ADDRESS'] || null;
+
+					if (address !== null) {
+						address = formatAddress(address);
+					}
+
+					if ((lat === null || lat === undefined) && (lng === null || lng === undefined) 
+						&& (firmname !== '1' && firmname !== 'blank')) {
+						
+						const promises = [checkExistence(pdfText, firmname), checkExistence(pdfText, address)];
+
+						var index = null;
+						await Promise.all(promises)
+							.then(results => {
+								var count = 0;
+								for (let j = 0; j < results.length; j++) {
+									const isExist = results[j];
+									if (isExist) { count++; }
+								}
+								if (count === results.length) {
+									index = i;
+								}
+							})
+							.catch(err => console.log(err));
+
+						if (index !== null) {
+							console.log('Match found, index:[' + index + '], id:[' + result['ID'] + ']');
+							return extractCoordinates(pdfText)
+								.then(output => {
+									if (output !== null) {
+										excelRows[index].LATITUDE = output.latitude;
+										excelRows[index].LONGITUDE = output.longitude;
+										console.log(global_url[pdf_index]);
+										console.log(excelRows[index]);
+
+										const result = {
+											pdf: global_url[pdf_index],
+											excelRows: excelRows[index]
+										}
+										pdf.doc(excelRows[index].ID).set(result);
+									}else {
+										console.log('Cannot extract coordinates in text, index:[' + index + '], id:[' + result['ID'] + ']');
+									}
+									return index;
+								})
+								.catch(err => console.log(err));
+						}
+
+					}
+				}
+			}else {
+				return null;
+			}
+		}
+
+		function ProcessExcel(data) {
+			$('#upload').hide();
+			$('#progress_container').show();
+			completed = 0;
+
+		    var workbook = XLSX.read(data, {
+		        type: 'binary'
+		    });
+		
+		    var firstSheet = workbook.SheetNames[0];
+		    excelRows = XLSX.utils.sheet_to_row_object_array(workbook.Sheets[firstSheet]);
+
+		    var urls = ['/examples/pdf/test12.pdf', '/examples/pdf/test11.pdf', '/examples/pdf/test10.pdf', '/examples/pdf/test9.pdf', '/examples/pdf/test6.pdf'];
+
+		    $.ajax({
+		    	url: 'pdf_directories.txt',
+		    	success: function(data) {
+		    		// const object = JSON.parse(data);
+		    		// const urls = [];
+		    		// for (var key in object) {
+		    		// 	urls.push(object[key]);
+		    		// }
+
+		    		global_url = urls;
+		    		pdfLength = urls.length;
+		    		console.log("PDF LENGTH: " + pdfLength);
+		    		return runTransactions(urls);
+		    	}
+		    })
+		};
+
+		function showProgress(progress, index, len) {
+			if (!total_progress.hasOwnProperty(index)) {
+				total_progress[index] = 0;
+			}
+			const prog = (progress * 100);
+			total_progress[index] = prog / len;
+
+			var count = 0;
+			for (var key in total_progress) {
+				count += parseInt(total_progress[key].toFixed(1));
+			}
+			$('#progress').text(count);
+			$('#page').text("Processing " + (index + 1) + " out of " + len);
+		}
+
+		async function recognize(images) {
+			console.log("RECOGNIZING IMAGES");
+			const texts = [];
+
+			for (var i = 0; i < images.length; i++) {
+				global_index = i;
+				const image = images[i];
+				const { data: { text } } = await scheduler.addJob('recognize', image);
+				texts.push(text);
+			}
+
+			await worker.terminate();
+			await scheduler.terminate();
+			return texts;
+		}
+
+		async function textToObject(text) {
+			var array = text.split("\n");
+			for (let k = 0; k < array.length; k++) {
+				if (!array[k].includes(":") && array[k - 1] !== undefined && array[k - 1].includes(":")) {
+					array[k - 1] = array[k - 1].trim() + " " + array[k].trim();
+					array.splice(k, 1);
+				}else if (!array[k].includes(":")) {
+					array.splice(k, 1);
+				}
+			}
+			const object = {};
+			array.forEach(value => {
+				const split = value.split(":");
+				if (split[1] !== undefined) {
+					object[split[0]] = split[1];
+				}
+			});
+
+			return object;
+		}
+
+		async function convertion(pdf_url) {
+			return PDFJS.getDocument(pdf_url).promise
+				.then(pdf => {
+					return pdf.getPage(1);
+				})
+				.then(page => {
+					var scale = 1.5;
+					var viewport = page.getViewport({scale:scale});
+
+					const canvas = document.createElement("canvas");
+
+					var ctx = canvas.getContext('2d');
+					canvas.height = viewport.height;
+					canvas.width = viewport.width;
+
+					page.render({canvasContext: ctx, viewport: viewport});
+
+					return new Promise((resolve, reject) => {
+						setTimeout(() => {
+							resolve(canvas);
+						}, 115);
+					});
+				})
+				.then(canvas => {
+					const url = canvas.toDataURL();
+					const img = new Image();
+					img.src = url;
+					img.ud = 'pic';
+					return img;
+				});
+		}
+
+		async function convertAllPDF(pdf_urls) {
+			console.log("Converting pdf to images");
+			const images = [];
+			for (let i = 0; i < pdf_urls.length; i++) {
+				const image = await convertion(pdf_urls[i]);
+				images.push(image);
+				console.log("Image " + (i + 1).toString() + "/"+pdf_urls.length.toString()+" converted");
+			}
+			return images;
+		}
+
+		function runTransactions(urls) {
+			return convertAllPDF(urls)
+				.then(images => {
+					return recognize(images);
+				})
+				.then(texts => {
+					const promises = [];
+					for (var i = 0; i < texts.length; i++) {
+						const text = texts[i];
+						const promise = getLatLng(text, i);
+						promises.push(promise);
+					}
+					return Promise.all(promises);
+		    	})
+		    	.then(changed_locations => {
+
+		    		return excelRows;
+		    	})
+		    	.then(excelRows => {
+		    		var ws = XLSX.utils.json_to_sheet(excelRows);
+		    		var wb = XLSX.utils.book_new();
+		    		XLSX.utils.book_append_sheet(wb, ws, "Industrial Coordinates");
+		    		XLSX.writeFile(wb, "industrial_coordinates.xlsx");
+		    	})
+				.catch(err => console.log(err));
+		}
+
+	});
+</script>
