@@ -117,6 +117,8 @@
 		const splitter = ", ";
 		const total_progress = {};
 		var excelRows = null;
+		const folderId = 'PBB2019';
+		const replacer = "****";
 
 		var global_index = 0;
 		var global_url;
@@ -131,6 +133,7 @@
 
 		const db = firebase.firestore();
 		const pdf = db.collection('pdf');
+		const progress = db.collection('progress');
 
 		async function initTesseract() {
 			setLogging(true);
@@ -353,61 +356,65 @@
 
 		async function getLatLng(pdfText, pdf_index) {
 			if (excelRows.length > 0) {
-				for (let i = 0; i < excelRows.length; i++) {
-					const result = await excelRows[i];
-					const firmname = await result['FIRMNAME'];
-					const lng = await result['LONGITUDE'];
-					const lat = await result['LATITUDE'];
-					var address = await result['ADDRESS'] || null;
-
-					if (address !== null) {
-						address = formatAddress(address);
-					}
-
-					if ((lat === null || lat === undefined) && (lng === null || lng === undefined) 
-						&& (firmname !== '1' && firmname !== 'blank')) {
-						
-						const promises = [checkExistence(pdfText, firmname), checkExistence(pdfText, address)];
-
+				return extractCoordinates(pdfText)
+					.then(output => {
 						var index = null;
-						await Promise.all(promises)
-							.then(results => {
-								var count = 0;
-								for (let j = 0; j < results.length; j++) {
-									const isExist = results[j];
-									if (isExist) { count++; }
-								}
-								if (count === results.length) {
-									index = i;
-								}
-							})
-							.catch(err => console.log(err));
+						if (output !== null) {
+							const docKey = global_url[pdf_index].replace(/\//g, replacer);
+							const result = {
+								pdf: global_url[pdf_index],
+								text: pdfText
+							}
+							pdf.doc(docKey).set(result, {merge: true});
 
-						if (index !== null) {
-							console.log('Match found, index:[' + index + '], id:[' + result['ID'] + ']');
-							return extractCoordinates(pdfText)
-								.then(output => {
-									if (output !== null) {
-										excelRows[index].LATITUDE = output.latitude;
-										excelRows[index].LONGITUDE = output.longitude;
-										console.log(global_url[pdf_index]);
-										console.log(excelRows[index]);
+							for (let i = 0; i < excelRows.length; i++) {
+								const result = excelRows[i];
+								const firmname = result['FIRMNAME'];
+								const lng = result['LONGITUDE'];
+								const lat = result['LATITUDE'];
+								var address = result['ADDRESS'] || null;
 
-										const result = {
-											pdf: global_url[pdf_index].replace("/examples/pdf/", ""),
-											excelRows: excelRows[index]
-										}
-										pdf.doc(excelRows[index].ID).set(result);
-									}else {
-										console.log('Cannot extract coordinates in text, index:[' + index + '], id:[' + result['ID'] + ']');
-									}
-									return index;
-								})
-								.catch(err => console.log(err));
+								if (address !== null) {
+									address = formatAddress(address);
+								}
+
+								if ((lat === null || lat === undefined) && (lng === null || lng === undefined) 
+									&& (firmname !== '1' && firmname !== 'blank')) {
+									
+									const promises = [checkExistence(pdfText, firmname), checkExistence(pdfText, address)];
+
+									return Promise.all(promises)
+										.then(results => {
+											var count = 0;
+											for (let j = 0; j < results.length; j++) {
+												const isExist = results[j];
+												if (isExist) { count++; }
+											}
+											if (count === results.length) {
+												index = i;
+											}
+
+											if (index !== null) {
+												console.log('Match found, index:[' + index + '], id:[' + result['ID'] + ']');
+												excelRows[index].LATITUDE = output.latitude;
+												excelRows[index].LONGITUDE = output.longitude;
+												console.log(global_url[pdf_index]);
+												console.log(excelRows[index]);
+												result['excelRow'] = excelRows[index];
+												pdf.doc(docKey).set(result, {merge: true});
+												break;
+											}
+										})
+										.catch(err => console.log(err));
+								}
+							}
+						}else {
+							console.log('Cannot extract coordinates in text, index:[' + index + '], id:[' + result['ID'] + ']');
 						}
+						return index;
+					})
+					.catch(err => console.log(err));
 
-					}
-				}
 			}else {
 				return null;
 			}
@@ -439,10 +446,33 @@
 		    		global_url = urls;
 		    		pdfLength = urls.length;
 		    		console.log("PDF LENGTH: " + pdfLength);
-		    		return runTransactions(urls);
+
+		    		return batchTransactions(urls, 0);
 		    	}
 		    })
 		};
+
+		function batchTransactions(urls, start) {
+			global_index = start;
+			const new_urls = [];
+			const divider = 49;
+			const range = start + divider;
+
+			if (start !== urls.length - 1) {
+				for (let i = start; i < urls.length; i++) {
+					new_urls.push(urls[i]);
+					if (i === range || i === (urls.length - 1)) {
+						const append = "_0_" + range.toString();
+						return runTransactions(new_urls, append)
+							.then(() => {
+								return batchTransactions(urls, (i + 1));
+							})
+							.catch(err => console.log(err));
+						break;
+					}
+				}
+			}
+		}
 
 		function showProgress(progress, index, len) {
 			if (!total_progress.hasOwnProperty(index)) {
@@ -464,14 +494,16 @@
 			const texts = [];
 
 			for (var i = 0; i < images.length; i++) {
-				global_index = i;
 				const image = images[i];
 				const { data: { text } } = await scheduler.addJob('recognize', image);
+				global_index++;
 				texts.push(text);
 			}
 
-			await worker.terminate();
-			await scheduler.terminate();
+			if (global_index === pdfLength - 1) {
+				await worker.terminate();
+				await scheduler.terminate();
+			}
 			return texts;
 		}
 
@@ -505,7 +537,7 @@
 					var scale = 1.5;
 					var viewport = page.getViewport({scale:scale});
 
-					const canvas = document.createElement("canvas");
+					var canvas = document.createElement("canvas");
 
 					var ctx = canvas.getContext('2d');
 					canvas.height = viewport.height;
@@ -523,7 +555,7 @@
 					const url = canvas.toDataURL();
 					const img = new Image();
 					img.src = url;
-					img.ud = 'pic';
+					img.id = 'pic';
 					return img;
 				});
 		}
@@ -531,16 +563,17 @@
 		async function convertAllPDF(pdf_urls) {
 			console.log("Converting pdf to images");
 			const images = [];
+			$('#page').show();
 			for (let i = 0; i < pdf_urls.length; i++) {
 				const image = await convertion(pdf_urls[i]);
-				images.push(image);
-				console.log("Image " + (i + 1).toString() + "/"+pdf_urls.length.toString()+" converted");
+				await images.push(image);
+				await $('#page').text("Image " + (i + 1).toString() + "/"+pdf_urls.length.toString()+" converted");
 			}
 			return images;
 		}
 
-		function runTransactions(urls) {
-			return convertAllPDF(urls)
+		async function runTransactions(urls, append) {
+			return convertAllPDF(urls, append)
 				.then(images => {
 					return recognize(images);
 				})
@@ -561,9 +594,18 @@
 		    		var ws = XLSX.utils.json_to_sheet(excelRows);
 		    		var wb = XLSX.utils.book_new();
 		    		XLSX.utils.book_append_sheet(wb, ws, "Industrial Coordinates");
-		    		XLSX.writeFile(wb, "industrial_coordinates.xlsx");
+		    		XLSX.writeFile(wb, "Coordinates" + append + ".xlsx");
+
+		    		progress.doc(folderId).set({progress: append}, {merge: true});
+		    		return null;
 		    	})
-				.catch(err => console.log(err));
+				.catch(err => {
+					console.log(err);
+					var ws = XLSX.utils.json_to_sheet(excelRows);
+					var wb = XLSX.utils.book_new();
+					XLSX.utils.book_append_sheet(wb, ws, "Industrial Coordinates");
+					XLSX.writeFile(wb, "broken_coordinates" + append + ".xlsx");
+				});
 		}
 
 	});
