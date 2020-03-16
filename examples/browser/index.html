@@ -394,7 +394,7 @@
 										console.log(excelRows[index]);
 
 										const result = {
-											pdf: global_url[pdf_index],
+											pdf: global_url[pdf_index].replace("/examples/pdf/", ""),
 											excelRows: excelRows[index]
 										}
 										pdf.doc(excelRows[index].ID).set(result);
