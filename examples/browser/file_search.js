@@ -1,12 +1,12 @@
 const path = require('path');
 const fs = require('fs');
-const user = 'JohnRobertDelinila';
-const systemName = 'Pdfsystem.js';
+const user = 'delin';
+const systemName = 'tesseract_pdf';
 const root = '/Users/' + user + '/Downloads/'+ systemName +'/';
-const folder = 'Sample/';
+const folder = 'PBB2019/';
 const myPath = root + folder;
 
-function recFindByExt(base,ext,files,result) {
+function recFindByExt(base, ext, files, result) {
     files = files || fs.readdirSync(base) 
     result = result || [] 
 
@@ -31,7 +31,7 @@ const output = {};
 for (let i = 0; i < ext_file_list.length; i++) {
     output[i] = ext_file_list[i].replace(root, "/").trim();
 }
-fs.appendFile('pdf_directories.txt', JSON.stringify(output), function (err) {
+fs.appendFile('pdf_directories.txt', JSON.stringify(output).replace(/\\\\/g, '/').split(root).join('/'), function (err) {
   if (err) throw err;
   console.log('File is created successfully.');
 });
