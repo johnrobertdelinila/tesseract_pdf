@@ -134,12 +134,19 @@
 
 		const db = firebase.firestore();
 		const pdf = db.collection('pdf');
+		const pdf_no_location = db.collection('pdf_no_location');
 		const progress = db.collection('progress');
 
 		const docKeys = [];
 
 		async function getDocKeys() {
 			pdf.get()
+				.then(snapshot => {
+					snapshot.forEach(doc => {
+						docKeys.push(doc.id);
+					});
+					return pdf_no_location.get();
+				})
 				.then(snapshot => {
 					snapshot.forEach(doc => {
 						docKeys.push(doc.id);
@@ -373,7 +380,7 @@
 			if (excelRows.length > 0) {
 				// Yung latlng
 				const output = await extractCoordinates(pdfText);
-				
+
 				const docKey = global_url[pdf_index].replace(/\//g, replacer);
 				if (output !== null && !docKeys.includes(docKey)) {
 					// const obj = await textToObject(pdfText);
@@ -430,6 +437,8 @@
 					return index;
 				}else {
 					// console.log('Cannot extract coordinates in text, index:[' + index + '], id:[' + result['ID'] + ']');
+
+					pdf_no_location.doc(docKey).set({"no_location": null});
 					return null;
 				}
 			}else {
@@ -465,7 +474,7 @@
 		    		pdfLength = urls.length;
 		    		console.log("PDF LENGTH: " + pdfLength);
 
-		    		return batchTransactions(urls, 399);
+		    		return batchTransactions(urls, 0);
 		    	}
 		    })
 		};
@@ -509,17 +518,18 @@
 		async function recognize(images) {
 			console.log("RECOGNIZING IMAGES");
 			const excelIndexes = [];
-
-			for (var i = 0; i < images.length; i++) {
-
-				const docKey = global_url[i].replace(/\//g, replacer);
+			const max = (global_index + divider);
+			while(global_index < ((max > pdfLength) ? pdfLength : max)) {
+				console.log(global_index);
+				const docKey = global_url[global_index].replace(/\//g, replacer);4
+				console.log(docKey);
 				if (!docKeys.includes(docKey)) {
-					const image = images[i];
+					const image = images[global_index];
 					const { data: { text } } = await scheduler.addJob('recognize', image);
-					const excelIndex = await getLatLng(text, i);
-					global_index++;
+					const excelIndex = await getLatLng(text, global_index);
 					excelIndexes.push(excelIndex);
 				}
+				global_index++;
 			}
 
 			if (global_index === pdfLength - 1) {
