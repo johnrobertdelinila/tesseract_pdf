@@ -144,6 +144,7 @@
 					snapshot.forEach(doc => {
 						docKeys.push(doc.id);
 					});
+					console.log(docKeys);
 				})
 				.catch(err => console.log(err));
 		}
@@ -372,8 +373,8 @@
 			if (excelRows.length > 0) {
 				// Yung latlng
 				const output = await extractCoordinates(pdfText);
+				
 				const docKey = global_url[pdf_index].replace(/\//g, replacer);
-
 				if (output !== null && !docKeys.includes(docKey)) {
 					// const obj = await textToObject(pdfText);
 					const docu = {
@@ -464,7 +465,7 @@
 		    		pdfLength = urls.length;
 		    		console.log("PDF LENGTH: " + pdfLength);
 
-		    		return batchTransactions(urls, 249);
+		    		return batchTransactions(urls, 399);
 		    	}
 		    })
 		};
