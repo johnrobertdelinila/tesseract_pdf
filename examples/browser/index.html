@@ -117,8 +117,9 @@
 		const splitter = ", ";
 		const total_progress = {};
 		var excelRows = null;
-		const folderId = 'PBB2019';
+		var folderId = null;
 		const replacer = "****";
+		const divider = 49;
 
 		var global_index = 0;
 		var global_url;
@@ -356,65 +357,67 @@
 
 		async function getLatLng(pdfText, pdf_index) {
 			if (excelRows.length > 0) {
-				return extractCoordinates(pdfText)
-					.then(output => {
-						var index = null;
-						if (output !== null) {
-							const docKey = global_url[pdf_index].replace(/\//g, replacer);
-							const result = {
-								pdf: global_url[pdf_index],
-								text: pdfText
-							}
-							pdf.doc(docKey).set(result, {merge: true});
+				// Yung latlng
+				const output = await extractCoordinates(pdfText);
 
-							for (let i = 0; i < excelRows.length; i++) {
-								const result = excelRows[i];
-								const firmname = result['FIRMNAME'];
-								const lng = result['LONGITUDE'];
-								const lat = result['LATITUDE'];
-								var address = result['ADDRESS'] || null;
+				if (output !== null) {
+					const obj = await textToObject(pdfText);
+					const docKey = global_url[pdf_index].replace(/\//g, replacer);
+					const docu = {
+						pdf: global_url[pdf_index],
+						text: pdfText,
+						object: obj
+					}
 
-								if (address !== null) {
-									address = formatAddress(address);
-								}
+					// Yung index ng makukuhang matches ng address at firmname
+					var index = null;
 
-								if ((lat === null || lat === undefined) && (lng === null || lng === undefined) 
-									&& (firmname !== '1' && firmname !== 'blank')) {
-									
-									const promises = [checkExistence(pdfText, firmname), checkExistence(pdfText, address)];
+					for (let i = 0; i < excelRows.length; i++) {
+						const result = excelRows[i];
+						const firmname = result['FIRMNAME'];
+						const lng = result['LONGITUDE'];
+						const lat = result['LATITUDE'];
+						var address = result['ADDRESS'] || null;
 
-									return Promise.all(promises)
-										.then(results => {
-											var count = 0;
-											for (let j = 0; j < results.length; j++) {
-												const isExist = results[j];
-												if (isExist) { count++; }
-											}
-											if (count === results.length) {
-												index = i;
-											}
-
-											if (index !== null) {
-												console.log('Match found, index:[' + index + '], id:[' + result['ID'] + ']');
-												excelRows[index].LATITUDE = output.latitude;
-												excelRows[index].LONGITUDE = output.longitude;
-												console.log(global_url[pdf_index]);
-												console.log(excelRows[index]);
-												result['excelRow'] = excelRows[index];
-												pdf.doc(docKey).set(result, {merge: true});
-												break;
-											}
-										})
-										.catch(err => console.log(err));
-								}
-							}
-						}else {
-							console.log('Cannot extract coordinates in text, index:[' + index + '], id:[' + result['ID'] + ']');
+						if (address !== null) {
+							address = formatAddress(address);
 						}
-						return index;
-					})
-					.catch(err => console.log(err));
 
+						if ((lat === null || lat === undefined) && (lng === null || lng === undefined) 
+							&& (firmname !== '1' && firmname !== 'blank')) {
+							
+							const promises = [checkExistence(pdfText, firmname), checkExistence(pdfText, address)];
+							const results = await Promise.all(promises);
+
+							var count = 0;
+							for (let j = 0; j < results.length; j++) {
+								const isExist = results[j];
+								if (isExist) { count++; }
+							}
+							if (count === results.length) {
+								index = i;
+							}
+
+							if (index !== null) {
+								console.log('Match found, index:[' + index + '], id:[' + result['ID'] + ']');
+								excelRows[index].LATITUDE = output.latitude;
+								excelRows[index].LONGITUDE = output.longitude;
+								console.log(global_url[pdf_index]);
+								console.log(excelRows[index]);
+
+								docu['excelRow'] = excelRows[index];
+								break;
+							}
+
+						}
+					}
+
+					pdf.doc(docKey).set(docu, {merge: true});
+					return index;
+				}else {
+					console.log('Cannot extract coordinates in text, index:[' + index + '], id:[' + result['ID'] + ']');
+					return null;
+				}
 			}else {
 				return null;
 			}
@@ -432,17 +435,18 @@
 		    var firstSheet = workbook.SheetNames[0];
 		    excelRows = XLSX.utils.sheet_to_row_object_array(workbook.Sheets[firstSheet]);
 
-		    var urls = ['/examples/pdf/test12.pdf', '/examples/pdf/test11.pdf', '/examples/pdf/test10.pdf', '/examples/pdf/test9.pdf', '/examples/pdf/test6.pdf'];
+		    // var urls = ['/pdf/test12.pdf', '/pdf/test11.pdf', '/pdf/test10.pdf', '/pdf/test9.pdf', '/pdf/test6.pdf'];
 
 		    $.ajax({
 		    	url: 'pdf_directories.txt',
 		    	success: function(data) {
-		    		// const object = JSON.parse(data);
-		    		// const urls = [];
-		    		// for (var key in object) {
-		    		// 	urls.push(object[key]);
-		    		// }
-
+		    		const object = JSON.parse(data);
+		    		folderId = object["0"].split("/")[1];
+		    		const urls = [];
+		    		for (var key in object) {
+		    			urls.push(object[key]);
+		    		}
+		    		
 		    		global_url = urls;
 		    		pdfLength = urls.length;
 		    		console.log("PDF LENGTH: " + pdfLength);
@@ -455,7 +459,6 @@
 		function batchTransactions(urls, start) {
 			global_index = start;
 			const new_urls = [];
-			const divider = 49;
 			const range = start + divider;
 
 			if (start !== urls.length - 1) {
@@ -491,20 +494,21 @@
 
 		async function recognize(images) {
 			console.log("RECOGNIZING IMAGES");
-			const texts = [];
+			const excelIndexes = [];
 
 			for (var i = 0; i < images.length; i++) {
 				const image = images[i];
 				const { data: { text } } = await scheduler.addJob('recognize', image);
+				const excelIndex = await getLatLng(text, i);
 				global_index++;
-				texts.push(text);
+				excelIndexes.push(excelIndex);
 			}
 
 			if (global_index === pdfLength - 1) {
 				await worker.terminate();
 				await scheduler.terminate();
 			}
-			return texts;
+			return excelIndexes;
 		}
 
 		async function textToObject(text) {
@@ -577,17 +581,7 @@
 				.then(images => {
 					return recognize(images);
 				})
-				.then(texts => {
-					const promises = [];
-					for (var i = 0; i < texts.length; i++) {
-						const text = texts[i];
-						const promise = getLatLng(text, i);
-						promises.push(promise);
-					}
-					return Promise.all(promises);
-		    	})
-		    	.then(changed_locations => {
-
+				.then(changed_locations => {
 		    		return excelRows;
 		    	})
 		    	.then(excelRows => {
