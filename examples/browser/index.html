@@ -365,8 +365,7 @@
 					const docKey = global_url[pdf_index].replace(/\//g, replacer);
 					const docu = {
 						pdf: global_url[pdf_index],
-						text: pdfText,
-						object: obj
+						text: pdfText
 					}
 
 					// Yung index ng makukuhang matches ng address at firmname
@@ -451,7 +450,7 @@
 		    		pdfLength = urls.length;
 		    		console.log("PDF LENGTH: " + pdfLength);
 
-		    		return batchTransactions(urls, 0);
+		    		return batchTransactions(urls, 249);
 		    	}
 		    })
 		};
