@@ -119,7 +119,7 @@
 		var excelRows = null;
 		var folderId = null;
 		const replacer = "****";
-		const divider = 40;
+		const divider = 2;
 
 		var global_index = 0;
 		var global_url;
@@ -490,7 +490,7 @@
 		    		pdfLength = urls.length;
 		    		console.log("PDF LENGTH: " + pdfLength);
 
-		    		return batchTransactions(urls, 5200);
+		    		return batchTransactions(urls, 0);
 		    	}
 		    })
 		};
@@ -548,7 +548,7 @@
 					excelIndexes.push(excelIndex);
 					// $('#page').text("Processing " + (global_index + 1) + " out of " + pdfLength);
 				}
-				$('#progress').text(percentage(global_index + 1, pdfLength0).toFixed(1));
+				$('#progress').text(percentage(global_index + 1, pdfLength).toFixed(1));
 				global_index++;
 			}
 
