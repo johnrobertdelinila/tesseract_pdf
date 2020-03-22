@@ -166,6 +166,12 @@
 			await worker.loadLanguage('eng');
 			await worker.initialize('eng');
 			scheduler.addWorker(worker);
+
+			// worker2 = createWorker(options);
+			// await worker2.load();
+			// await worker2.loadLanguage('eng');
+			// await worker2.initialize('eng');
+			// scheduler.addWorker(worker2);
 		}
 		initTesseract();
 
@@ -215,6 +221,10 @@
 
 		function isFloat(n){
 		    return Number(n) === n && n % 1 !== 0;
+		}
+
+		function percentage(partialValue, totalValue) {
+		   return (100 * partialValue) / totalValue;
 		}
 
 		function formatAddress(address) {
@@ -480,13 +490,15 @@
 		    		pdfLength = urls.length;
 		    		console.log("PDF LENGTH: " + pdfLength);
 
-		    		return batchTransactions(urls, 0);
+		    		return batchTransactions(urls, 5200);
 		    	}
 		    })
 		};
 
 		function batchTransactions(urls, start) {
 			global_index = start;
+			$('#progress').text(percentage(global_index + 1, pdfLength).toFixed(1));
+
 			const new_urls = [];
 			const range = start + (divider - 1);
 
@@ -515,7 +527,6 @@
 			for (var key in total_progress) {
 				count += parseInt(total_progress[key].toFixed(1));
 			}
-			$('#progress').text(count);
 			$('#page').text("Processing " + (index + 1) + " out of " + len);
 		}
 
@@ -535,7 +546,9 @@
 				}else if (fireExcel[docKey] !== undefined && fireExcel[docKey].text !== undefined) {
 					const excelIndex = await getLatLng(fireExcel[docKey].text, urls[i]);
 					excelIndexes.push(excelIndex);
+					// $('#page').text("Processing " + (global_index + 1) + " out of " + pdfLength);
 				}
+				$('#progress').text(percentage(global_index + 1, pdfLength0).toFixed(1));
 				global_index++;
 			}
 
